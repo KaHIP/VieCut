@@ -22,6 +22,8 @@ VieCut 1.00
 
 **VieCut** is a library of shared-memory parallel algorithms for the minimum cut problem on undirected edge-weighted graphs. Part of the [KaHIP](https://github.com/KaHIP) organization.
 
+> **Python Interface:** An easy-to-use Python interface for this software is available in [CHSZLabLib](https://github.com/CHSZLab/CHSZLabLib).
+
 | | |
 |:--|:--|
 | **What it solves** | Find the minimum edge cut that separates a graph into two (or more) components |
