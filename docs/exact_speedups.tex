@@ -4,6 +4,8 @@
 \usepackage{lmodern}
 \usepackage{microtype}
 \usepackage{booktabs}
+\usepackage{array}
+\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{tikz}
@@ -121,25 +123,27 @@ change marked \emph{parallel} affects only the $32$-thread \cfg{exact} path; one
 marked \emph{both} is in the sequential \cfg{noi} loop as well.
 
 \smallskip
-\begin{tabular}{@{}llp{9.2cm}@{}}
+\begin{center}
+\begin{tabular}{@{}ll R{6.3cm} R{5.5cm}@{}}
 \toprule
-scope & where & change\\
+scope & where & change & effect\\
 \midrule
-both     & queue        & select heap / deque / intrusive-list by the cut value\\
-both     & contraction  & contract in place; keep only the graph in use\\
-both     & reductions   & cascading Padberg--Rinaldi (\cfg{pr\_cascade}) on sparse rounds\\
-both     & primitive    & stamp-array shared-neighbourhood lookup in \cfg{contractEdge}, \cfg{contractVertexSet}\\
-both     & traversal    & byte flags; single-probe queue update; scan adjacency as one range; drop dead blacklist\\
-both     & pre-run      & return early when exact; skip when $\delta(G)=\lambda$ on small sparse graphs\\
-both     & groups       & build only the contraction groups that are read; \cfg{firstContainedVertex}\\
-both     & clustering   & label propagation in vertex order, first-seen tie-break\\
-parallel & contraction  & dense contraction partitioned by contracted vertex (no hash, no lock)\\
-parallel & capforest    & one pass per thread; shared-vs-independent visited by graph size\\
-parallel & batch PR     & parallel Padberg--Rinaldi at the equality boundary\\
-parallel & edge record  & \cfg{COMPACT\_EDGES} ($40\!\to\!24$ bytes) for flow-free binaries\\
-build    & flags        & link-time optimisation; \cfg{graph2bin} METIS-to-binary converter\\
+both     & queue        & select heap / deque / intrusive-list by the cut value & solves the $4$ large-cut instances that ran the $32$-thread path out of memory\\
+both     & contraction  & contract in place; keep only the graph in use & drops a per-round rebuild that was quadratic on one-vertex-per-round families\\
+both     & reductions   & cascading Padberg--Rinaldi (\cfg{pr\_cascade}) on sparse rounds & clears whole cycle families in a fraction of a second where capforest took a round per vertex\\
+both     & primitive    & stamp-array shared-neighbourhood lookup in \cfg{contractEdge}, \cfg{contractVertexSet} & removes the per-merge hash map that was most of a round on the dense weighted families\\
+both     & traversal    & byte flags; single-probe queue update; scan adjacency as one range; drop dead blacklist & a lighter capforest inner loop on every instance\\
+both     & pre-run      & return early when exact; skip when $\delta(G)=\lambda$ on small sparse graphs & removes pure overhead on the easy sparse instances\\
+both     & groups       & build only the contraction groups that are read; \cfg{firstContainedVertex} & stops materialising contraction groups nothing reads\\
+both     & clustering   & label propagation in vertex order, first-seen tie-break & deterministic clustering; the same cut on every run\\
+parallel & contraction  & dense contraction partitioned by contracted vertex (no hash, no lock) & no concurrent map or lock on the rounds that collapse the graph\\
+parallel & capforest    & one pass per thread; shared-vs-independent visited by graph size & drops a feedback rule that collapsed the parallel capforest to one pass\\
+parallel & batch PR     & parallel Padberg--Rinaldi at the equality boundary & extra reductions once the cut bound is tight\\
+parallel & edge record  & \cfg{COMPACT\_EDGES} ($40\!\to\!24$ bytes) for flow-free binaries & a smaller record and a lighter cache footprint\\
+build    & flags        & link-time optimisation; \cfg{graph2bin} METIS-to-binary converter & cross-file inlining; binary input that loads without parsing\\
 \bottomrule
 \end{tabular}
+\end{center}
 
 \smallskip
 Every change is internal; \cfg{exact}, \cfg{noi}, and the output format are
