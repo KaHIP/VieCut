@@ -111,6 +111,7 @@ int main(int argn, char** argv) {
         numthreads.emplace_back(1);
     timer tdegs;
 
+    cfg->num_iterations = num_iterations;
     for (size_t i = 0; i < num_iterations; ++i) {
         for (int numthread : numthreads) {
             LOG << cfg->seed << " random seed";

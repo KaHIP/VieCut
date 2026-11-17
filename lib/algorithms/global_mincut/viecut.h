@@ -46,6 +46,7 @@ class viecut : public minimum_cut {
  public:
     typedef GraphPtr GraphPtrType;
     static constexpr bool debug = false;
+    bool exact_result = false;
     bool timing = configuration::getConfig()->verbose;
     viecut() { }
 
@@ -54,6 +55,10 @@ class viecut : public minimum_cut {
     EdgeWeight perform_minimum_cut(GraphPtr G) {
         return perform_minimum_cut(G, false);
     }
+
+    // True when the value returned is the minimum cut of the graph handed in,
+    // not merely an upper bound on it.
+    bool resultIsExact() const { return exact_result; }
 
     EdgeWeight perform_minimum_cut(GraphPtr G,
                                    bool indirect) {
@@ -64,6 +69,7 @@ class viecut : public minimum_cut {
         EdgeWeight cut = G->getMinDegree();
         std::vector<GraphPtr> graphs;
         graphs.push_back(G);
+        exact_result = false;
 
         minimum_cut_helpers<GraphPtr>::setInitialCutValues(graphs);
 
@@ -105,7 +111,32 @@ class viecut : public minimum_cut {
 
         if (graphs.back()->number_of_nodes() > 1) {
             timer t;
+            // The loop above only runs on graphs of more than 10000 vertices,
+            // so below that it never contracts and the call below solves the
+            // graph we were given rather than a coarsened one.
+            const bool never_contracted = (graphs.size() == 1);
+#ifdef PARALLEL
+            // That call is sequential. When this is the pre-run of the parallel
+            // exact algorithm, solving the whole graph here spends one thread
+            // and leaves the other thirty-one idle, and then reports the answer
+            // as exact so that the parallel loop never runs at all: every
+            // instance of ten thousand vertices or fewer, which is fifteen of
+            // the fifty-three here, ignored the thread count entirely. Hand the
+            // graph back instead. The minimum degree is already an upper bound
+            // on the minimum cut, which is all the caller's loop needs to
+            // start, and it solves the graph with every thread. reg2 at
+            // n=6400 goes from 22.6 seconds to 1.6.
+            if (indirect && never_contracted && omp_get_max_threads() > 1 &&
+                !configuration::getConfig()->save_cut) {
+                exact_result = false;
+                return cut;
+            }
+#endif
             noi_minimum_cut<GraphPtr> noi;
+            // Solving the graph itself makes the answer the minimum cut rather
+            // than an upper bound on it. Say so, so that the caller need not
+            // compute it a second time.
+            exact_result = never_contracted;
             cut = std::min(cut, noi.perform_minimum_cut(graphs.back(), true));
 
             LOGC(timing) << "Exact Algorithm:"

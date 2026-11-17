@@ -16,6 +16,7 @@
 #include <limits>
 #include <unordered_map>
 #include <utility>
+#include <algorithm>
 #include <vector>
 
 #include "data_structure/priority_queues/maxNodeHeap.h"
@@ -37,6 +38,20 @@ class vecMaxNodeHeap : public priority_queue_interface {
         : m_element_index(num_nodes, UNDEFINED_NODE) { }
     virtual ~vecMaxNodeHeap() { }
 
+    // Matches list_bucket_pq::reuse so the capforest can keep either queue
+    // across rounds. The heap is drained every round, so clearing its vectors
+    // is enough; the index array is re-marked as empty.
+    void reuse(NodeID num_nodes, EdgeWeight) {
+        m_elements.clear();
+        m_heap.clear();
+        if (m_element_index.size() < num_nodes) {
+            m_element_index.assign(num_nodes, UNDEFINED_NODE);
+        } else {
+            std::fill(m_element_index.begin(),
+                      m_element_index.begin() + num_nodes, UNDEFINED_NODE);
+        }
+    }
+
     NodeID size();
     bool empty();
 
@@ -50,6 +65,16 @@ class vecMaxNodeHeap : public priority_queue_interface {
 
     void decreaseKey(NodeID node, Gain gain);
     void increaseKey(NodeID node, Gain gain);
+    // Insert, or raise the key if the node is already queued. The caller would
+    // otherwise ask contains() first and then call one of the two, looking the
+    // node up in the index twice on a path walked once per edge visit.
+    void insertOrIncrease(NodeID node, Gain gain) {
+        if (m_element_index[node] == UNDEFINED_NODE) {
+            insert(node, gain);
+        } else {
+            increaseKey(node, gain);
+        }
+    }
     void changeKey(NodeID node, Gain gain);
     Gain getKey(NodeID node);
 

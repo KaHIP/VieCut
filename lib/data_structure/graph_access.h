@@ -82,6 +82,7 @@ class basicGraph {
     }
 
     // construction of the graph
+
     void start_construction(NodeID n, EdgeID m) {
         m_building_graph = true;
         node = 0;
@@ -302,6 +303,12 @@ class graph_access {
     /* ============================================================= */
     /* build methods */
     /* ============================================================= */
+    // The binary reader knows every degree in advance and offers it here.
+    // graph_access builds into a flat array whose size is already known, so
+    // there is nothing to reserve; the call exists so that one reader serves
+    // both graph types.
+    void reserveNodeDegree(NodeID, size_t) { }
+
     void start_construction(NodeID nodes, EdgeID edges) {
         m_degrees_computed = false;
         graphref->start_construction(nodes, edges);
