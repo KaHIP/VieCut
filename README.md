@@ -35,9 +35,9 @@ VieCut 2.00
 
 ## News
 
-**November 17, 2026: Stoer-Wagner is fixed and available as `sw`.** The Stoer-Wagner minimum cut returned wrong cuts or crashed on every input; Bora Uçar found and fixed the bugs. It is now available on the command line as `./build/mincut <graph> sw`, computes the cut value and, with `-s`, the cut itself, and is tested against brute force on random weighted graphs.
-
 **November 17, 2026 — We released VieCut 2.0.** The exact minimum cut is substantially faster with no change to any computed cut: a geometric mean of 8.9x on one thread and 8.8x on 32 threads over a 53-instance benchmark, and the parallel exact path now solves large-cut instances that previously ran out of memory. The changes were produced with Agentic Algorithm Engineering; the public interface is unchanged. See the [one-page summary of what changed](docs/exact_speedups.pdf) the [AAE paper](https://arxiv.org/abs/2609.07204), and the [AAE skill on GitHub](https://github.com/CHSZLab/AgenticAlgorithmEngineering).
+
+**November 17, 2026: Stoer-Wagner is fixed and available as `sw`.** The Stoer-Wagner minimum cut returned wrong cuts or crashed on every input; Bora Uçar found and fixed the bugs. It is now available on the command line as `./build/mincut <graph> sw`, computes the cut value and, with `-s`, the cut itself, and is tested against brute force on random weighted graphs.
 
 ## Quick Start
 
