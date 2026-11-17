@@ -28,12 +28,14 @@ VieCut 2.00
 | | |
 |:--|:--|
 | **What it solves** | Find the minimum edge cut that separates a graph into two (or more) components |
-| **Algorithms** | Inexact heuristic (VieCut), exact parallel (NOI-based), cactus representation, multiterminal cut |
+| **Algorithms** | Inexact heuristic (VieCut), exact parallel (NOI-based), Stoer-Wagner, cactus representation, multiterminal cut |
 | **Parallelism** | Shared-memory via OpenMP; sequential versions included |
 | **Interfaces** | CLI |
 | **Requires** | C++17 compiler, CMake 3.9+, OpenMP, MPI (multiterminal cut only) |
 
 ## News
+
+**November 17, 2026: Stoer-Wagner is fixed and available as `sw`.** The Stoer-Wagner minimum cut returned wrong cuts or crashed on every input; Bora Uçar found and fixed the bugs. It is now available on the command line as `./build/mincut <graph> sw`, computes the cut value and, with `-s`, the cut itself, and is tested against brute force on random weighted graphs.
 
 **November 17, 2026 — We released VieCut 2.0.** The exact minimum cut is substantially faster with no change to any computed cut: a geometric mean of 8.9x on one thread and 8.8x on 32 threads over a 53-instance benchmark, and the parallel exact path now solves large-cut instances that previously ran out of memory. The changes were produced with Agentic Algorithm Engineering; the public interface is unchanged. See the [one-page summary of what changed](docs/exact_speedups.pdf) the [AAE paper](https://arxiv.org/abs/2609.07204), and the [AAE skill on GitHub](https://github.com/CHSZLab/AgenticAlgorithmEngineering).
 
@@ -60,6 +62,9 @@ mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DUSE_TCMALLOC=OF
 
 # Exact minimum cut (parallel)
 ./build/mincut_parallel network.graph exact
+
+# Exact minimum cut with Stoer-Wagner (sequential)
+./build/mincut network.graph sw
 
 # Find all minimum cuts (cactus representation)
 ./build/mincut_parallel network.graph cactus
@@ -99,6 +104,7 @@ When installed via Homebrew, use `viecut_mincut`, `viecut_mincut_parallel`, etc.
 |:----------|:-----|:------------|
 | VieCut | `vc` | Fast heuristic, near-optimal in practice |
 | Nagamochi-Ono-Ibaraki | `noi` | Classic exact algorithm |
+| Stoer-Wagner | `sw` | Classic exact algorithm (maximum adjacency phases) |
 | Karger-Stein | `ks` | Randomized contraction |
 | Matula | `matula` | (2+e)-approximation |
 | Padberg-Rinaldi | `pr` | Contraction rules |

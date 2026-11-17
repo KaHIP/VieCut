@@ -92,6 +92,22 @@ class adjlist_graph {
         return wgt;
     }
 
+    // Weighted degree of the supervertex containing node, where the edge
+    // targets are original vertices whose supervertex is given by uf. A
+    // template, as the sequential and the parallel build each define their
+    // own union_find.
+    template <class UnionFind>
+    EdgeWeight getWeightedNodeDegree(NodeID node, UnionFind& uf) {
+        NodeID rep = uf.Find(node);
+        EdgeWeight wgt = 0;
+        for (const Edge& e : m_adjacencies[rep].second) {
+            if (uf.Find(e.target) != rep) {
+                wgt += e.weight;
+            }
+        }
+        return wgt;
+    }
+
     bool HasEdgeTo(NodeID node1, NodeID node2) {
         for (const Edge& e : m_adjacencies[node1].second) {
             if (e.target == node2) {
@@ -104,7 +120,8 @@ class adjlist_graph {
     void construct_from_graph(const graph_access& G) {
         start_construction(G.number_of_nodes(), G.number_of_edges());
         for (NodeID n : G.nodes()) {
-            new_node(G.getNodeWeight(n));
+            // graph_access has no node weights, every vertex counts as one.
+            new_node();
             for (EdgeID e : G.edges_of(n)) {
                 new_edge(n, G.getEdgeTarget(e), G.getEdgeWeight(e));
             }
@@ -157,6 +174,49 @@ class adjlist_graph {
             m_min_degree = new_wgt;
         }
 
+        m_num_nodes_merged--;
+    }
+
+    // Merges node2 into node1 after uf.Union(node1, node2) made node1 the
+    // representative. Edge targets are resolved through uf, so edges to
+    // vertices merged earlier are combined and edges inside the new
+    // supervertex are dropped.
+    template <class UnionFind>
+    void merge_nodes(NodeID node1, NodeID node2, UnionFind& uf) {
+        assert(uf.Find(node1) == node1);
+        assert(uf.Find(node2) == node1);
+        assert(deadnodes[node1] == false);
+        assert(deadnodes[node2] == false);
+
+        std::unordered_map<NodeID, EdgeWeight> edges;
+        EdgeWeight new_wgt = 0;
+        for (NodeID node : { node1, node2 }) {
+            for (const Edge& e : m_adjacencies[node].second) {
+                NodeID tgt = uf.Find(e.target);
+                if (tgt != node1) {
+                    edges[tgt] += e.weight;
+                    new_wgt += e.weight;
+                }
+            }
+        }
+
+        m_adjacencies[node1].second.clear();
+        for (auto e : edges) {
+            m_adjacencies[node1].second.emplace_back(e.first, e.second);
+        }
+        m_adjacencies[node1].first += m_adjacencies[node2].first;
+        m_adjacencies[node2].first = 0;
+        std::vector<Edge>().swap(m_adjacencies[node2].second);
+
+        assert(new_wgt == getWeightedNodeDegree(node1, uf));
+        deadnodes[node2] = true;
+
+        if (new_wgt > m_max_degree) {
+            m_max_degree = new_wgt;
+        }
+        if (new_wgt < m_min_degree) {
+            m_min_degree = new_wgt;
+        }
         m_num_nodes_merged--;
     }
 
