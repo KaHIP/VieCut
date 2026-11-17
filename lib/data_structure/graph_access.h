@@ -410,6 +410,22 @@ class graph_access {
         return graphref->m_nodes[node + 1].firstEdge;
     }
 
+    // The edges of node as a contiguous range, the counterpart of
+    // mutable_graph::adjacencyOf, so that traversal code written against it
+    // compiles for both graph types.
+    struct edge_range {
+        const Edge* first;
+        const Edge* last;
+        const Edge* begin() const { return first; }
+        const Edge* end() const { return last; }
+    };
+
+    edge_range adjacencyOf(NodeID node) const {
+        const Edge* edges = graphref->m_edges.data();
+        return { edges + get_first_edge(node),
+                 edges + get_first_invalid_edge(node) };
+    }
+
     PartitionID get_partition_count() const {
         return m_partition_count;
     }

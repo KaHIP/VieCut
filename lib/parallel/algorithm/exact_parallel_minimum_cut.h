@@ -17,6 +17,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -167,15 +168,20 @@ class exact_parallel_minimum_cut : public minimum_cut {
             // reg2, where it finds a handful of pairs per round, its per-round
             // extraction summed to sixteen times the whole solve. A call that
             // merges less than a hundredth of the graph is a strike, and three
-            // strikes retire it for the run.
-            if (pr_cascade_misses < 3 && pr_cascade_budget > 0 &&
+            // strikes retire it for the run. The cascade is implemented for
+            // mutable_graph only.
+            constexpr bool is_mutable =
+                std::is_same_v<GraphPtr, mutableGraphPtr>;
+            if (is_mutable && pr_cascade_misses < 3 && pr_cascade_budget > 0 &&
                 curr_g->number_of_nodes() < (1u << 17) &&
                 curr_g->number_of_edges() <=
                     size_t{32} * curr_g->number_of_nodes()) {
                 EdgeWeight pr_bound = mincut;
                 union_find pruf(curr_g->number_of_nodes());
-                const size_t got =
-                    pr_cascade::run(curr_g, &pr_bound, &pruf);
+                size_t got = 0;
+                if constexpr (is_mutable) {
+                    got = pr_cascade::run(curr_g, &pr_bound, &pruf);
+                }
                 mincut = std::min(mincut, pr_bound);
                 if (got > 0) {
                     pre_merges = std::move(pruf);
