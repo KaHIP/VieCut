@@ -42,6 +42,8 @@ template <class GraphPtr>
         return new padberg_rinaldi<GraphPtr>();
     if (argv_str == "cactus")
         return new cactus_mincut<GraphPtr>();
+    if (argv_str == "sw")
+        return new stoer_wagner_minimum_cut();
 #endif
 #ifdef PARALLEL
     if (argv_str == "inexact")

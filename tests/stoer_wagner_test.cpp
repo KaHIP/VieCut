@@ -7,16 +7,20 @@
  * Published under the MIT license in the LICENSE file.
  *****************************************************************************/
 
+#include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <random>
 #include <string>
 #include <tuple>
 #include <vector>
 
+#include "algorithms/global_mincut/algorithms.h"
 #include "algorithms/global_mincut/stoer_wagner_minimum_cut.h"
 #include "common/definitions.h"
 #include "data_structure/adjlist_graph.h"
 #include "data_structure/graph_access.h"
+#include "data_structure/mutable_graph.h"
 #include "gtest/gtest.h"
 #include "io/graph_io.h"
 #include "tools/random_functions.h"
@@ -72,6 +76,25 @@ TEST(StoerWagnerTest, GraphsFromFile) {
     }
 }
 
+#ifndef PARALLEL
+// The command line flag: mincut <graph> sw, on both graph types.
+template <class GraphPtr>
+static void check_sw_flag(const std::string& file, EdgeWeight expected) {
+    auto G = graph_io::readGraphWeighted<typename GraphPtr::element_type>(
+        std::string(VIECUT_PATH) + "/graphs/" + file + ".metis");
+    std::unique_ptr<minimum_cut> mc(selectMincutAlgorithm<GraphPtr>("sw"));
+    ASSERT_NE(dynamic_cast<stoer_wagner_minimum_cut*>(mc.get()), nullptr);
+    ASSERT_EQ(mc->perform_minimum_cut(G), expected) << file;
+}
+
+TEST(StoerWagnerTest, CommandLineFlag) {
+    check_sw_flag<graphAccessPtr>("small", 2);
+    check_sw_flag<graphAccessPtr>("small-wgt", 3);
+    check_sw_flag<mutableGraphPtr>("small", 2);
+    check_sw_flag<mutableGraphPtr>("small-wgt", 3);
+}
+#endif
+
 TEST(StoerWagnerTest, TwoVertices) {
     EdgeList edges = { { 0, 1, 7 } };
     ASSERT_EQ(stoer_wagner(make_graph(2, edges)), 7);
@@ -105,7 +128,26 @@ TEST(StoerWagnerTest, RandomGraphsAgainstBruteForce) {
             }
         }
         random_functions::setSeed(round);
-        ASSERT_EQ(stoer_wagner(make_graph(n, edges)), brute_force(n, edges))
+        graph_access G = make_graph(n, edges);
+        ASSERT_EQ(stoer_wagner(G), brute_force(n, edges))
             << "round " << round << ", n = " << n;
+
+        // The side it reports is a proper subset whose cut is that value.
+        adjlist_graph A;
+        A.construct_from_graph(G);
+        std::vector<bool> side;
+        random_functions::setSeed(round);
+        uint64_t cut = stoer_wagner_minimum_cut().perform_minimum_cut(A,
+                                                                      &side);
+        uint64_t side_cut = 0;
+        for (auto [u, v, w] : edges) {
+            if (side[u] != side[v]) {
+                side_cut += w;
+            }
+        }
+        size_t in_side = std::count(side.begin(), side.end(), true);
+        ASSERT_EQ(side_cut, cut) << "round " << round;
+        ASSERT_GT(in_side, 0) << "round " << round;
+        ASSERT_LT(in_side, n) << "round " << round;
     }
 }
