@@ -247,8 +247,16 @@ class contraction {
         // path. On the dense families, where a round merges most of the graph
         // and there are only a handful of rounds, that left 80 percent of the
         // running time on one thread of thirty-two.
+        //
+        // Rebuilding in place loses the record of which original vertices
+        // each contracted vertex contains, which the in place path keeps and
+        // which the cut sides and the cactus algorithms read; save_cut is set
+        // whenever they are needed (see app/mincut.cpp), so only rebuild in
+        // place without it.
         const bool merges_much = reverse_mapping.size() * 1.2 <= G->n();
-        if (merges_much && (copy || omp_get_max_threads() > 1)) {
+        const bool rebuild_in_place = omp_get_max_threads() > 1 &&
+                                      !configuration::getConfig()->save_cut;
+        if (merges_much && (copy || rebuild_in_place)) {
             return contractParallel(G, mapping, reverse_mapping.size());
         }
         return contractGraphVtxset(G, mapping, reverse_mapping, copy);

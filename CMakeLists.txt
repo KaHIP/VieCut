@@ -153,5 +153,13 @@ endif()
 if(RUN_TESTS)
     enable_testing()
     add_subdirectory(extlib/googletest)
+    # The bundled googletest (2018) compiles itself with -Werror, and newer
+    # compilers warn on its code (GCC >= 11: -Wmaybe-uninitialized in
+    # gtest-death-test.cc). Keep the warnings, but not as errors.
+    foreach(gtest_target gtest gtest_main gmock gmock_main)
+        if(TARGET ${gtest_target})
+            target_compile_options(${gtest_target} PRIVATE -Wno-error)
+        endif()
+    endforeach()
     add_subdirectory(tests)
 endif(RUN_TESTS)
