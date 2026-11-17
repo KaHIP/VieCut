@@ -35,8 +35,8 @@ of~\cite{henzinger2019} is unchanged in what it returns; only its implementation
 developed with Agentic Algorithm Engineering (AAE)~\cite{aae}: stated as a hypothesis, implemented, measured on a
 fixed benchmark of $53$ instances, and kept only if it was faster and left the minimum cut of every instance
 unchanged. The study is described in the AAE paper~\cite{aae}, and every kept change it produced is in this
-release, including a later round that closes the gap to the classical sequential implementations; they are listed
-in full in the summary on the second page.
+release, including a later round of single-thread improvements; they are listed in full in the summary on the
+second page.
 
 \begin{center}
 \begin{tikzpicture}[
@@ -104,10 +104,7 @@ exact, $32$ threads & $5.76$\,s & $0.65$\,s & $8.8\times$\\
 \end{tabular}
 \end{center}
 The $32$-thread ``before'' is the code with every single-thread change applied; the unmodified previous release
-cannot solve the whole set at $32$ threads. Against independent reimplementations of the two classical competitors
-(Nagamochi--Ibaraki and Hao--Orlin, as shipped with the 1997 study), the tuned algorithm is about $5\times$ faster
-at $32$ threads over the instances those codes can represent, and faster in the geometric mean even on a single
-thread.
+cannot solve the whole set at $32$ threads.
 
 \section{New \& compatibility}
 \cfg{graph2bin} converts a METIS text graph to a binary form that loads without parsing; \cfg{graph\_io} reads it
