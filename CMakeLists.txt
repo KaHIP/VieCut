@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.9)
 project(vc)
 
+# The bundled tlx and googletest declare cmake_minimum_required < 3.5, which
+# CMake 4 rejects. Raise the floor for them unless the user set it already.
+if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+endif()
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
 find_package(OpenMP REQUIRED)
