@@ -33,6 +33,10 @@ VieCut 2.00
 | **Interfaces** | CLI |
 | **Requires** | C++17 compiler, CMake 3.9+, OpenMP, MPI (multiterminal cut only) |
 
+## News
+
+**November 17, 2026 — VieCut 2.0.** The exact minimum cut is substantially faster with no change to any computed cut: a geometric mean of 8.9x on one thread and 8.8x on 32 threads over a 53-instance benchmark, and the parallel exact path now solves large-cut instances that previously ran out of memory. The changes were produced with Agentic Algorithm Engineering; the public interface is unchanged. See the [one-page summary of what changed](docs/exact_speedups.pdf) and the [AAE paper](https://arxiv.org/abs/2609.07204).
+
 ## Quick Start
 
 ### Install via Homebrew (Linux only)
