@@ -43,6 +43,8 @@ build_and_test(push_relabel_test FALSE)
 build_and_test(multiterminal_cut_test FALSE)
 build_and_test(cactus_cut_test FALSE)
 build_and_test(cactus_cut_test TRUE)
+build_and_test(stoer_wagner_test FALSE)
+build_and_test(stoer_wagner_test TRUE)
 
 target_link_libraries(multiterminal_cut_test -lpthread ${MPI_LIBRARIES})
 
