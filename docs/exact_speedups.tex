@@ -80,11 +80,14 @@ second page.
   frozen graph, find almost nothing. A cascade contracts on the spot and re-reads degrees, removing whole cycle
   families in a fraction of a second where the capforest needed a round per vertex. It runs on sparse graphs
   only, retires when unproductive, and its merges ride the round's existing contraction.
-  \item \textbf{Smaller edge record, lighter inner loop, cheaper contraction primitive.} The edge record drops
-  the two fields only the flow algorithms read, under \cfg{COMPACT\_EDGES}, for the parallel binaries that cannot
-  reach them. The traversal scans the adjacency as one range, uses byte flags, and resolves a vertex's queue
-  position once per update; \cfg{contractEdge} and \cfg{contractVertexSet} find shared neighbourhoods through
-  stamp arrays rather than a hash map built per merge.
+  \item \textbf{Stamp arrays in the contraction primitives.} \cfg{contractEdge} and \cfg{contractVertexSet}
+  found the shared neighbourhood of the two vertices being merged through an \cfg{unordered\_map} rebuilt on every
+  merge, on the hottest contraction path. They now use a stamp array (an epoch counter per vertex, so clearing is
+  free) that persists with the graph, turning each lookup into an indexed read. On the dense weighted families the
+  hash was most of the cost of a round.
+  \item \textbf{Smaller edge record, lighter inner loop.} The edge record drops the two fields only the flow
+  algorithms read, under \cfg{COMPACT\_EDGES}, for the parallel binaries that cannot reach them. The traversal
+  scans the adjacency as one range, uses byte flags, and resolves a vertex's queue position once per update.
   \item \textbf{The pre-run is skipped where the minimum degree already is the cut}, on small sparse graphs,
   where it was pure overhead.
 \end{itemize}
