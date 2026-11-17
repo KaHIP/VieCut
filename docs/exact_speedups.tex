@@ -1,0 +1,102 @@
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=18mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[colorlinks,urlcolor=blue!55!black,linkcolor=black]{hyperref}
+\definecolor{vc}{RGB}{0,90,160}
+\setlist[itemize]{leftmargin=1.2em,itemsep=2pt,topsep=2pt}
+\titlespacing*{\section}{0pt}{6pt}{2pt}
+\titleformat{\section}{\large\bfseries\color{vc}}{}{0pt}{}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\pagestyle{empty}
+
+\begin{document}
+
+{\LARGE\bfseries\color{vc} Faster Exact Minimum Cut}\\[2pt]
+{\color{vc!60!black}\rule{\linewidth}{1pt}}\\[4pt]
+A speedup of VieCut's exact minimum cut (\texttt{mincut\_parallel <g> exact} and
+\texttt{mincut <g> noi}) that does not change a single computed cut. Every change
+was accepted only after confirming it leaves the minimum cut of every test
+instance unchanged.
+
+\section*{Results}
+Geometric mean of the per-instance running time over $53$ instances ($33$
+generated families from the 1997 Chekuri--Goldberg--Karger--Levine--Stein study,
+$20$ real-world $k$-cores of large web and social graphs), on a 64-core AMD
+EPYC:
+
+\begin{center}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+configuration & before & after & speedup \\
+\midrule
+exact, $1$ thread   & $25.0$\,s & $2.80$\,s & $8.9\times$ \\
+exact, $32$ threads & $5.76$\,s & $0.65$\,s & $8.8\times$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Against independent reimplementations of the two classical competitors
+(Nagamochi--Ibaraki and Hao--Orlin, as shipped with the 1997 study), the tuned
+exact algorithm is about five times faster at $32$ threads over the instances
+those codes can represent, and faster in the mean even on a single thread.
+
+\section*{What changed, and why}
+\begin{itemize}
+\item \textbf{The priority queue is sized by the cut, not the graph.} The
+parallel exact path always used a bucket queue with one bucket per attainable
+key, a \texttt{std::deque} sized by the value of the cut --- hundreds of
+gigabytes of empty buckets per round on a large-cut graph. It now selects
+between that queue, a heap, and an intrusive-list queue by the cut value, as the
+sequential \texttt{noi\_minimum\_cut} already did.
+
+\item \textbf{The graph is contracted in place, not rebuilt per round.} Both
+exact loops rebuilt the whole graph each round and kept every intermediate. On
+families that contract one vertex per round this was quadratic in time and
+memory; it is now a single copy, overwritten each round.
+
+\item \textbf{The contraction is parallel where the round collapses the graph,
+and dense.} The previous sparse contraction partitioned by original vertex,
+forcing a concurrent hash map and a serialized build. A second path partitions
+by contracted vertex, needs neither, and sums parallel edges in a dense array
+that fits in cache when few vertices remain.
+
+\item \textbf{The pass count is the thread count.} The parallel capforest runs
+one independent traversal per thread. A feedback rule that reduced the count
+drove the quantity it measured and collapsed to a single pass; it is removed.
+Whether the passes share their visited array is decided from the graph size
+before the first round.
+
+\item \textbf{The pre-run's reductions are made to cascade.} The
+Padberg--Rinaldi tests only fire once contraction has raised the degrees they
+compare against. The batch versions measure a frozen graph and find almost
+nothing; a new \texttt{pr\_cascade} contracts on the spot and re-reads degrees,
+removing whole cycle families in a fraction of a second where the capforest
+needed a round per vertex. It runs on sparse graphs only, retires when
+unproductive, and its merges ride the round's existing contraction.
+
+\item \textbf{Smaller edge record, lighter inner loop, cheaper contraction.} The
+edge record drops two fields the exact path never reads, under
+\texttt{COMPACT\_EDGES}, for binaries that cannot reach the flow algorithms. The
+traversal scans the adjacency as one range, uses byte flags, and resolves a
+vertex's queue position once per update; \texttt{contractEdge} and
+\texttt{contractVertexSet} find shared neighbourhoods through stamp arrays
+rather than a hash map built per merge.
+
+\item \textbf{The pre-run is skipped where the minimum degree already is the
+cut}, on small sparse graphs, where it was pure overhead.
+\end{itemize}
+
+\section*{New \& compatibility}
+\texttt{graph2bin} converts a METIS text graph to a binary form that loads
+without parsing; \texttt{graph\_io} reads it transparently. No public interface
+changed: \texttt{exact}, \texttt{noi}, and the output format are as before, and
+every computed cut is identical.
+
+\end{document}
