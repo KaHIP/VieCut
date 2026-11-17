@@ -6,6 +6,7 @@ VieCut 2.00
 [![GitHub Stars](https://img.shields.io/github/stars/KaHIP/VieCut)](https://github.com/KaHIP/VieCut/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/KaHIP/VieCut)](https://github.com/KaHIP/VieCut/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/KaHIP/VieCut)](https://github.com/KaHIP/VieCut/commits)
+[![arXiv](https://img.shields.io/badge/arXiv-2609.07204-b31b1b.svg)](https://arxiv.org/abs/2609.07204)
 [![JEA 2018](https://img.shields.io/badge/JEA'18-10.1145/3274662-blue)](https://doi.org/10.1145/3274662)
 [![IPDPS 2019](https://img.shields.io/badge/IPDPS'19-10.1109/IPDPS.2019.00013-blue)](https://doi.org/10.1109/IPDPS.2019.00013)
 [![ESA 2020](https://img.shields.io/badge/ESA'20-10.4230/LIPIcs.ESA.2020.59-blue)](https://doi.org/10.4230/LIPIcs.ESA.2020.59)
@@ -209,6 +210,15 @@ VieCut is free software provided under the MIT License.
 If you publish results using our algorithms, please cite the applicable papers:
 
 ```bibtex
+@article{BaderCGHNS26,
+  author    = {David A. Bader and Adil Chhabra and Ernestine Gro{\ss}mann and Monika Henzinger and Alexander Noe and Christian Schulz},
+  title     = {Agentic Algorithm Engineering: Improving Shared-Memory Exact Minimum Cuts},
+  journal   = {CoRR},
+  volume    = {abs/2609.07204},
+  year      = {2026},
+  doi       = {10.48550/arXiv.2609.07204}
+}
+
 @article{DBLP:journals/jea/HenzingerNSS18,
   author    = {Monika Henzinger and Alexander Noe and Christian Schulz and Darren Strash},
   title     = {Practical Minimum Cut Algorithms},
