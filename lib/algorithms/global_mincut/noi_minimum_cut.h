@@ -33,11 +33,13 @@
 #include "data_structure/priority_queues/node_bucket_pq.h"
 #include "data_structure/priority_queues/vecMaxNodeHeap.h"
 #include "tools/random_functions.h"
+#include <type_traits>
 #include "tools/timer.h"
 
 #ifdef PARALLEL
 #include "parallel/coarsening/contract_graph.h"
 #include "parallel/coarsening/contraction_tests.h"
+#include "parallel/coarsening/pr_cascade.h"
 #include "parallel/data_structure/union_find.h"
 #else
 #include "coarsening/contract_graph.h"
@@ -69,10 +71,62 @@ class noi_minimum_cut : public minimum_cut {
         graphs.push_back(G);
         minimum_cut_helpers<GraphPtr>::setInitialCutValues(graphs);
 
+        int pr_cascade_misses = 0;
+        int pr_cascade_budget = 8;
+        (void)pr_cascade_misses; (void)pr_cascade_budget;
         while (graphs.back()->number_of_nodes() > 2 && mincut > 0) {
+            // The same cascading Padberg-Rinaldi reductions the parallel loop
+            // applies, folded into this round's contraction. This loop is what
+            // the pre-run uses to finish every instance, so without them a
+            // small bikewheel takes four seconds at one thread where the
+            // reductions solve it in milliseconds. Guards as in the parallel
+            // loop: sparse graphs, three unproductive calls retire it.
+            union_find seq_pre(graphs.back()->number_of_nodes());
+            bool have_seq_pre = false;
+#ifdef PARALLEL
+            if constexpr (std::is_same_v<GraphPtr, mutableGraphPtr>) {
+            if (pr_cascade_misses < 3 && pr_cascade_budget > 0 &&
+                graphs.back()->number_of_nodes() < (1u << 17) &&
+                graphs.back()->number_of_edges() <=
+                    size_t{32} * graphs.back()->number_of_nodes()) {
+                EdgeWeight pr_bound = mincut;
+                const size_t got =
+                    pr_cascade::run(graphs.back(), &pr_bound, &seq_pre);
+                mincut = std::min(mincut, pr_bound);
+                if (got > 0) have_seq_pre = true;
+                if (got * 100 < graphs.back()->number_of_nodes()) {
+                    ++pr_cascade_misses;
+                }
+                if (got * 4 < graphs.back()->number_of_nodes()) {
+                    --pr_cascade_budget;
+                }
+            }
+            }
+#endif
             auto uf = modified_capforest(graphs.back(), mincut);
-            graphs.emplace_back(
-                contraction::fromUnionFind(graphs.back(), &uf, true));
+            if (have_seq_pre) {
+                for (NodeID v = 0; v < graphs.back()->number_of_nodes(); ++v) {
+                    const NodeID r = seq_pre.Find(v);
+                    if (r != v) uf.Union(v, r);
+                }
+            }
+            // Copy the graph once and then contract that copy in place, rather
+            // than building a whole new graph in every round and keeping all of
+            // them. The first round still copies, because the caller keeps
+            // using the graph it handed us, and with save_cut the history is
+            // needed to map the cut back onto the input.
+            const bool save_cut = configuration::getConfig()->save_cut;
+            const bool own_copy =
+                save_cut ||
+                (graphs.size() == 1 &&
+                 configuration::getConfig()->num_iterations > 1);
+            GraphPtr next =
+                contraction::fromUnionFind(graphs.back(), &uf, own_copy);
+            if (own_copy) {
+                graphs.emplace_back(next);
+            } else {
+                graphs.back() = next;
+            }
             mincut = minimum_cut_helpers<GraphPtr>::updateCut(graphs, mincut);
         }
 

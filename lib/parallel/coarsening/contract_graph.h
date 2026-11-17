@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <omp.h>
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -188,6 +189,25 @@ class contraction {
         std::vector<NodeID> part(G->number_of_nodes(), UNDEFINED_NODE);
         std::vector<NodeID> mapping(G->n());
         NodeID current_pid = 0;
+
+        // Contracting in place only ever looks at the groups that hold more
+        // than one vertex; the singletons are skipped. Filling them in anyway
+        // costs one heap allocation per vertex per round, because every inner
+        // vector allocates on its first push_back, and that is a quadratic
+        // number of allocations over a run. So count first and fill only the
+        // groups that will be read. When we hand back a copy the caller walks
+        // every group, so there the mapping is still built in full.
+        const bool groups_only = !copy && !save_cut;
+        std::vector<NodeID> group_size;
+        if (groups_only) {
+            // Indexed by the representative that Find returns, which is a vertex
+            // id, not a dense component index.
+            group_size.assign(G->number_of_nodes(), 0);
+            for (NodeID n : G->nodes()) {
+                group_size[uf->Find(n)]++;
+            }
+        }
+
         for (NodeID n : G->nodes()) {
             NodeID part_id = uf->Find(n);
             if (part[part_id] == UNDEFINED_NODE) {
@@ -197,8 +217,10 @@ class contraction {
             if (save_cut) {
                 G->setPartitionIndex(n, part[part_id]);
             }
-            reverse_mapping[part[part_id]].push_back(
-                G->containedVertices(n)[0]);
+            if (!groups_only || group_size[part_id] > 1) {
+                reverse_mapping[part[part_id]].push_back(
+                    G->firstContainedVertex(n));
+            }
         }
 
         return contractGraph(G, mapping, reverse_mapping, copy);
@@ -209,11 +231,27 @@ class contraction {
         const std::vector<NodeID>& mapping,
         const std::vector<std::vector<NodeID> >& reverse_mapping,
         bool copy = true) {
-        if (reverse_mapping.size() * 1.2 > G->n() || !copy) {
-            return contractGraphVtxset(G, mapping, reverse_mapping, copy);
-        } else {
-            return contractGraphSparse(G, mapping, reverse_mapping.size());
+        // Two paths, and which one wins depends on the round and on the
+        // thread count. contractGraphVtxset merges the groups into the graph
+        // in place, which is cheap when a round merges almost nothing, and is
+        // sequential. contractGraphSparse rebuilds the graph, which costs a
+        // pass over every edge, and is parallel.
+        //
+        // A round that merges only a handful of vertices must take the in
+        // place path: dblcyc merges two vertices of 65536 and needs a round
+        // per vertex, so rebuilding each time is quadratic, and that is what
+        // the size test below is for.
+        //
+        // But contracting in place whenever we own the graph, which is what
+        // this did, sends every round after the first down the sequential
+        // path. On the dense families, where a round merges most of the graph
+        // and there are only a handful of rounds, that left 80 percent of the
+        // running time on one thread of thirty-two.
+        const bool merges_much = reverse_mapping.size() * 1.2 <= G->n();
+        if (merges_much && (copy || omp_get_max_threads() > 1)) {
+            return contractParallel(G, mapping, reverse_mapping.size());
         }
+        return contractGraphVtxset(G, mapping, reverse_mapping, copy);
     }
 
     static mutableGraphPtr contractGraphVtxset(
@@ -287,6 +325,134 @@ class contraction {
             LOG << "FULL MESH CONTRACT";
             return contractGraphFullMesh(G, mapping, reverse_mapping.size());
         }
+    }
+
+
+    // Contract without a hash table, in parallel, for the case where the
+    // contracted graph is small.
+    //
+    // contractGraphSparse hashes every edge into a concurrent map keyed by the
+    // pair of contracted endpoints, and then, for a mutable_graph, inserts the
+    // resulting edges inside one omp critical section, which serialises the
+    // whole construction. Both costs go away if the work is partitioned by
+    // contracted vertex rather than by original vertex: each contracted vertex
+    // then owns its own neighbour list, so no two threads ever touch the same
+    // entry, and the weights of parallel edges can be summed in a dense array
+    // indexed by contracted vertex instead of in a hash table. The dense array
+    // is what makes this worth doing: when the contraction leaves a few
+    // thousand vertices, as it does on the real-world k-cores, the array fits
+    // in L1 and an edge costs an indexed add.
+    //
+    // The stamp array avoids clearing the accumulator between vertices, which
+    // would otherwise cost O(num_nodes) per contracted vertex.
+    template <class GraphPtr>
+    static GraphPtr contractGraphDense(GraphPtr G,
+                                       const std::vector<NodeID>& mapping,
+                                       size_t num_nodes) {
+        const NodeID n_old = G->number_of_nodes();
+
+        // Invert the mapping with a counting sort: which original vertices
+        // became each contracted one.
+        std::vector<EdgeID> off(num_nodes + 1, 0);
+        for (NodeID v = 0; v < n_old; ++v) {
+            ++off[mapping[v] + 1];
+        }
+        for (size_t i = 0; i < num_nodes; ++i) {
+            off[i + 1] += off[i];
+        }
+        std::vector<NodeID> members(n_old);
+        {
+            std::vector<EdgeID> pos(off.begin(), off.end() - 1);
+            for (NodeID v = 0; v < n_old; ++v) {
+                members[pos[mapping[v]]++] = v;
+            }
+        }
+
+        std::vector<std::vector<std::pair<NodeID, EdgeWeight> > > adj(
+            num_nodes);
+
+#pragma omp parallel
+        {
+            std::vector<NodeID> stamp(num_nodes, UNDEFINED_NODE);
+            std::vector<EdgeWeight> acc(num_nodes, 0);
+            std::vector<NodeID> touched;
+#pragma omp for schedule(dynamic, 16)
+            for (NodeID u = 0; u < num_nodes; ++u) {
+                touched.clear();
+                for (EdgeID k = off[u]; k < off[u + 1]; ++k) {
+                    const NodeID v = members[k];
+                    for (EdgeID e : G->edges_of(v)) {
+                        auto [tgt, wgt] = G->getEdge(v, e);
+                        const NodeID t = mapping[tgt];
+                        if (t == u) {
+                            continue;            // self loop, not stored
+                        }
+                        if (stamp[t] != u) {
+                            stamp[t] = u;
+                            acc[t] = wgt;
+                            touched.push_back(t);
+                        } else {
+                            acc[t] += wgt;
+                        }
+                    }
+                }
+                adj[u].reserve(touched.size());
+                for (NodeID t : touched) {
+                    adj[u].emplace_back(t, acc[t]);
+                }
+                // Sorted so that the reverse edge can be found by binary
+                // search below, and so that the neighbour order does not
+                // depend on the thread schedule.
+                std::sort(adj[u].begin(), adj[u].end());
+            }
+        }
+
+        auto coarser = std::make_shared<typename GraphPtr::element_type>();
+        coarser->start_construction(num_nodes);
+
+        EdgeID total = 0;
+#pragma omp parallel for schedule(dynamic, 16) reduction(+ : total)
+        for (NodeID u = 0; u < num_nodes; ++u) {
+            std::vector<RevEdge> row;
+            row.reserve(adj[u].size());
+            for (const auto& [t, w] : adj[u]) {
+                const auto it = std::lower_bound(
+                    adj[t].begin(), adj[t].end(),
+                    std::make_pair(u, static_cast<EdgeWeight>(0)));
+                row.emplace_back(t, w,
+                                 static_cast<EdgeID>(it - adj[t].begin()));
+            }
+            total += row.size();
+            coarser->setAdjacency(u, std::move(row));
+        }
+        coarser->setEdgeCount(total);
+        coarser->finish_construction();
+        return coarser;
+    }
+
+    // Picks between the two parallel contractions.
+    //
+    // The dense one partitions the work by contracted vertex, which is what
+    // lets it drop the hash table and the lock, and is also its weakness: a
+    // contracted vertex is one unit of work whatever it contains, so when a
+    // round collapses the graph very hard the units are wildly uneven. On
+    // twitter-2010 the first round takes 13 million vertices down to a few
+    // thousand, so a single group holds millions of original vertices and one
+    // thread does most of the round while the rest wait; measured, that is
+    // three to four times slower than the hash path rather than faster.
+    //
+    // So it is used only when the round leaves enough contracted vertices for
+    // the groups to be of comparable size, and few enough of them that the two
+    // arrays per thread stay small enough to be worth their cache.
+    template <class GraphPtr>
+    static GraphPtr contractParallel(GraphPtr G,
+                                     const std::vector<NodeID>& mapping,
+                                     size_t num_nodes) {
+        const bool balanced = num_nodes * 32 >= G->number_of_nodes();
+        if (balanced && num_nodes <= (1u << 18)) {
+            return contractGraphDense(G, mapping, num_nodes);
+        }
+        return contractGraphSparse(G, mapping, num_nodes);
     }
 
     // altered version of KaHiPs matching contraction

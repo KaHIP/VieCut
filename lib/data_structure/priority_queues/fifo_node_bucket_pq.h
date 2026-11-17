@@ -44,6 +44,14 @@ class fifo_node_bucket_pq : public priority_queue_interface {
     void deleteNode(NodeID node);
 
     bool contains(NodeID node);
+    // See vecMaxNodeHeap::insertOrIncrease: one index lookup, not two.
+    void insertOrIncrease(NodeID node, Gain gain) {
+        if (m_queue_index[node].first == UNDEFINED_COUNT) {
+            insert(node, gain);
+        } else {
+            increaseKey(node, gain);
+        }
+    }
     Gain gain(NodeID Node);
 
  private:

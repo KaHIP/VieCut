@@ -59,7 +59,8 @@ class tests {
     template <class GraphPtr>
     static union_find prTests12(GraphPtr G,
                                 EdgeWeight weight_limit,
-                                bool find_all_cuts = false) {
+                                bool find_all_cuts = false,
+                                bool at_equality = false) {
         union_find uf(G->number_of_nodes());
         G->computeDegrees();
 
@@ -91,13 +92,15 @@ class tests {
                     // when the incident vertices haven't been contracted yet
                     // keeping a data structure with current degrees
                     // would be too expensive in parallel
-                    if ((2 * wgt) > n_wgt) {
+                    if ((2 * wgt) > n_wgt ||
+                        (at_equality && 2 * wgt == n_wgt)) {
                         if (__sync_bool_compare_and_swap(&contracted[n],
                                                          false, true)) {
                             contracted[tgt] = true;
                             uf.Union(n, tgt);
                         }
-                    } else if ((2 * wgt) > tgt_wgt) {
+                    } else if ((2 * wgt) > tgt_wgt ||
+                               (at_equality && 2 * wgt == tgt_wgt)) {
                         if (__sync_bool_compare_and_swap(&contracted[tgt],
                                                          false, true)) {
                             contracted[n] = true;

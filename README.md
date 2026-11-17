@@ -1,4 +1,4 @@
-VieCut 1.00
+VieCut 2.00
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
 [![CMake](https://img.shields.io/badge/CMake-3.9+-064F8C.svg)](https://cmake.org/)
@@ -6,6 +6,7 @@ VieCut 1.00
 [![GitHub Stars](https://img.shields.io/github/stars/KaHIP/VieCut)](https://github.com/KaHIP/VieCut/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/KaHIP/VieCut)](https://github.com/KaHIP/VieCut/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/KaHIP/VieCut)](https://github.com/KaHIP/VieCut/commits)
+[![arXiv](https://img.shields.io/badge/arXiv-2609.07204-b31b1b.svg)](https://arxiv.org/abs/2609.07204)
 [![JEA 2018](https://img.shields.io/badge/JEA'18-10.1145/3274662-blue)](https://doi.org/10.1145/3274662)
 [![IPDPS 2019](https://img.shields.io/badge/IPDPS'19-10.1109/IPDPS.2019.00013-blue)](https://doi.org/10.1109/IPDPS.2019.00013)
 [![ESA 2020](https://img.shields.io/badge/ESA'20-10.4230/LIPIcs.ESA.2020.59-blue)](https://doi.org/10.4230/LIPIcs.ESA.2020.59)
@@ -31,6 +32,10 @@ VieCut 1.00
 | **Parallelism** | Shared-memory via OpenMP; sequential versions included |
 | **Interfaces** | CLI |
 | **Requires** | C++17 compiler, CMake 3.9+, OpenMP, MPI (multiterminal cut only) |
+
+## News
+
+**November 17, 2026 — We released VieCut 2.0.** The exact minimum cut is substantially faster with no change to any computed cut: a geometric mean of 8.9x on one thread and 8.8x on 32 threads over a 53-instance benchmark, and the parallel exact path now solves large-cut instances that previously ran out of memory. The changes were produced with Agentic Algorithm Engineering; the public interface is unchanged. See the [one-page summary of what changed](docs/exact_speedups.pdf) and the [AAE paper](https://arxiv.org/abs/2609.07204).
 
 ## Quick Start
 
@@ -209,6 +214,14 @@ VieCut is free software provided under the MIT License.
 If you publish results using our algorithms, please cite the applicable papers:
 
 ```bibtex
+@inproceedings{BaderCGHNS26,
+  author    = {David A. Bader and Adil Chhabra and Ernestine Gro{\ss}mann and Monika Henzinger and Alexander Noe and Christian Schulz},
+  title     = {Agentic Algorithm Engineering: Improving Shared-Memory Exact Minimum Cuts},
+  booktitle = {13th DIMACS Implementation Challenge},
+  year      = {2027},
+  doi       = {10.48550/arXiv.2609.07204}
+}
+
 @article{DBLP:journals/jea/HenzingerNSS18,
   author    = {Monika Henzinger and Alexander Noe and Christian Schulz and Darren Strash},
   title     = {Practical Minimum Cut Algorithms},

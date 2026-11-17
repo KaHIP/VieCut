@@ -29,30 +29,49 @@ struct RevEdge {
     NodeID     target;
     EdgeWeight weight;
     EdgeID     reverse_edge;
+#ifndef COMPACT_EDGES
+    // Only the flow algorithms read these. The minimum cut solver scans this
+    // record once per edge visit on its hottest loop, so builds that do not
+    // need flow leave them out and the record shrinks from 40 to 24 bytes.
     FlowType   flow;
     size_t     problem_id;
+#endif
 
     RevEdge() { }
 
     explicit RevEdge(NodeID p_target)
-        : target(p_target), weight(1), flow(0), problem_id(0) { }
+        : target(p_target), weight(1)
+#ifndef COMPACT_EDGES
+          , flow(0), problem_id(0)
+#endif
+    { }
 
     RevEdge(NodeID p_target, EdgeWeight p_wgt)
-        : target(p_target), weight(p_wgt), flow(0), problem_id(0) { }
+        : target(p_target), weight(p_wgt)
+#ifndef COMPACT_EDGES
+          , flow(0), problem_id(0)
+#endif
+    { }
 
     RevEdge(NodeID p_target, EdgeWeight p_wgt, EdgeID p_rev)
         : target(p_target),
           weight(p_wgt),
-          reverse_edge(p_rev),
-          flow(0),
-          problem_id(0) { }
+          reverse_edge(p_rev)
+#ifndef COMPACT_EDGES
+          , flow(0), problem_id(0)
+#endif
+    { }
 
     RevEdge(NodeID p_target, EdgeWeight p_wgt, EdgeID p_rev, FlowType p_flow)
         : target(p_target),
           weight(p_wgt),
-          reverse_edge(p_rev),
-          flow(p_flow),
+          reverse_edge(p_rev)
+#ifdef COMPACT_EDGES
+    { (void)p_flow; }
+#else
+          , flow(p_flow),
           problem_id(0) { }
+#endif
 };
 
 class mutable_graph {
@@ -124,6 +143,15 @@ class mutable_graph {
         return last_node++;
     }
 
+    // Give a vertex room for its edges before they are added. Every edge
+    // emplaces into the adjacency of both endpoints, so without this each of
+    // those vectors grows geometrically and the records are copied again at
+    // every step; on a graph with hundreds of millions of edges that copying
+    // is most of the time it takes to build it.
+    void reserveNodeDegree(NodeID node, size_t degree) {
+        vertices[node].reserve(degree);
+    }
+
     EdgeID new_edge(NodeID source, NodeID target) {
         return new_edge(source, target, 1);
     }
@@ -166,6 +194,13 @@ class mutable_graph {
         return iterator<EdgeID>(get_first_edge(n), get_first_invalid_edge(n));
     }
 
+    // The adjacency of a vertex as a contiguous range. Reading it through
+    // getEdge(n, e) makes the compiler reload the row for every edge, since it
+    // cannot prove that the queue updates in the loop leave it alone.
+    const std::vector<RevEdge>& adjacencyOf(NodeID n) const {
+        return vertices[n];
+    }
+
     auto edges_of_starting_at(NodeID n, EdgeID e) const {
         return iterator<EdgeID>(e, get_first_invalid_edge(n));
     }
@@ -181,20 +216,32 @@ class mutable_graph {
     }
 
     void setEdgeFlow(NodeID node, EdgeID edge, FlowType flow, size_t f_prob) {
+#ifdef COMPACT_EDGES
+        (void)node; (void)edge; (void)flow; (void)f_prob;
+#else
         vertices[node][edge].flow = flow;
         vertices[node][edge].problem_id = f_prob;
+#endif
     }
 
     void addEdgeFlow(NodeID node, EdgeID edge, FlowType addFlow, size_t f_pro) {
+#ifdef COMPACT_EDGES
+        (void)node; (void)edge; (void)addFlow; (void)f_pro;
+#else
         if (vertices[node][edge].problem_id == f_pro) {
             vertices[node][edge].flow += addFlow;
         } else {
             vertices[node][edge].flow = addFlow;
             vertices[node][edge].problem_id = f_pro;
         }
+#endif
     }
 
     FlowType getEdgeFlow(NodeID node, EdgeID edge, size_t f_problem) {
+#ifdef COMPACT_EDGES
+        (void)node; (void)edge; (void)f_problem;
+        return 0;
+#else
         if (vertices[node][edge].problem_id == f_problem) [[unlikely]] {
             return vertices[node][edge].flow;
         } else {
@@ -202,14 +249,40 @@ class mutable_graph {
             vertices[node][edge].problem_id = f_problem;
             return 0;
         }
+#endif
     }
 
     FlowType getEdgeFlow(NodeID node, EdgeID edge) {
+#ifdef COMPACT_EDGES
+        (void)node; (void)edge;
+        return 0;
+#else
         return vertices[node][edge].flow;
+#endif
     }
 
     void finish_construction() {
         last_node = vertices.size();
+    }
+
+    // Install one vertex's neighbour list directly, and set the edge count
+    // once at the end.
+    //
+    // The parallel contraction computes every contracted vertex's neighbours
+    // independently and can therefore fill them concurrently, which new_edge
+    // cannot: it writes both endpoints of an edge, so two threads working on
+    // different vertices still collide.
+    void setAdjacency(NodeID node, std::vector<RevEdge>&& adj) {
+        EdgeWeight wd = 0;
+        for (const auto& e : adj) {
+            wd += e.weight;
+        }
+        weighted_degree[node] = wd;
+        vertices[node] = std::move(adj);
+    }
+
+    void setEdgeCount(EdgeID m) {
+        num_edges = m;
     }
 
     /* ============================================================= */
@@ -319,6 +392,14 @@ class mutable_graph {
 
     std::vector<NodeID> containedVertices(NodeID node) const {
         return contained_in_this[node];
+    }
+
+    // containedVertices returns by value, so reading a single element with
+    // containedVertices(n)[0] allocates and copies the whole vector. The
+    // contraction does that once per vertex per round, which is quadratic over
+    // a run on the families that contract one pair at a time.
+    NodeID firstContainedVertex(NodeID node) const {
+        return contained_in_this[node][0];
     }
 
     void setContainedVertices(NodeID node, std::vector<NodeID> v) {
@@ -577,16 +658,28 @@ class mutable_graph {
         EdgeID del_id = 0;
         EdgeWeight del_wgt = 0;
 
-        std::unordered_map<NodeID, std::tuple<EdgeWeight, EdgeID, EdgeID> > map;
-        // store targets (and additional info) of vertices
-        // in unordered_map to find vertices that are in shared neighbourhood
+        // The shared neighbourhood used to be found through an
+        // unordered_map built per contraction. This runs once per merge on
+        // the hottest contraction path, and hashing was most of its constant:
+        // on the dense families every merge paid a map build over a
+        // neighbourhood of thousands. A stamp array indexed by vertex does
+        // the same lookup at the cost of an array read; the epoch makes
+        // clearing free, and the arrays persist with the graph.
+        if (ctr_stamp_.size() < vertices.size()) {
+            ctr_stamp_.assign(vertices.size(), 0);
+            ctr_edge_.resize(vertices.size());
+        }
+        if (++ctr_epoch_ == 0) {          // wrapped: reset lazily
+            std::fill(ctr_stamp_.begin(), ctr_stamp_.end(), 0);
+            ctr_epoch_ = 1;
+        }
         for (EdgeID ed : edges_of(node)) {
             if (ed != edge) {
                 RevEdge del_ed = vertices[node][ed];
-                map.emplace(getEdgeTarget(node, ed),
-                            std::make_tuple(del_ed.target,
-                                            del_ed.reverse_edge,
-                                            ed));
+                const NodeID t = getEdgeTarget(node, ed);
+                ctr_stamp_[t] = ctr_epoch_;
+                ctr_edge_[t] = std::make_tuple(del_ed.target,
+                                               del_ed.reverse_edge, ed);
             } else {
                 del_wgt = vertices[node][ed].weight;
                 del_id = ed;
@@ -598,9 +691,9 @@ class mutable_graph {
                 RevEdge del_edge = vertices[target][ed];
                 NodeID e_target = getEdgeTarget(target, ed);
                 // neighbour of 'target' also in neighbourhood of 'node'
-                if (map.count(e_target) > 0) {
+                if (ctr_stamp_[e_target] == ctr_epoch_) {
                     // sum up edge weights
-                    auto [tgt, rev, ed2] = map[e_target];
+                    auto [tgt, rev, ed2] = ctr_edge_[e_target];
                     vertices[node][ed2].weight += del_edge.weight;
                     vertices[tgt][rev].weight += del_edge.weight;
 
@@ -679,16 +772,40 @@ class mutable_graph {
         vertex_set_vec.erase(vertex_set_vec.begin() + idx);
 
         std::vector<RevEdge> edges;
-        std::unordered_map<NodeID, std::tuple<NodeID, EdgeID, EdgeID> > map;
+        // Membership and the shared-neighbourhood positions both go through
+        // stamp arrays rather than the hash containers this used: those cost
+        // a hash per edge of every member, once per merge, on the hottest
+        // contraction path, and on the dense families that was most of the
+        // running time of a round.
+        if (mem_stamp_.size() < vertices.size()) {
+            mem_stamp_.assign(vertices.size(), 0);
+        }
+        if (++mem_epoch_ == 0) {
+            std::fill(mem_stamp_.begin(), mem_stamp_.end(), 0);
+            mem_epoch_ = 1;
+        }
+        for (NodeID i : vertex_set) {
+            if (i < vertices.size()) mem_stamp_[i] = mem_epoch_;
+        }
+        if (ctr_stamp_.size() < vertices.size()) {
+            ctr_stamp_.assign(vertices.size(), 0);
+            ctr_edge_.resize(vertices.size());
+        }
+        if (++ctr_epoch_ == 0) {
+            std::fill(ctr_stamp_.begin(), ctr_stamp_.end(), 0);
+            ctr_epoch_ = 1;
+        }
 
         for (EdgeID e : edges_of(first)) {
             NodeID target = getEdgeTarget(first, e);
-            if (vertex_set.count(target) == 0) {
+            if (mem_stamp_[target] != mem_epoch_) {
                 RevEdge edge_to_set = vertices[first][e];
                 edges.push_back(vertices[first][e]);
-                map.emplace(target, std::make_tuple(edge_to_set.target,
-                                                    edge_to_set.reverse_edge,
-                                                    edges.size() - 1));
+                ctr_stamp_[target] = ctr_epoch_;
+                ctr_edge_[target] = std::make_tuple(
+                    static_cast<EdgeWeight>(edge_to_set.target),
+                    edge_to_set.reverse_edge,
+                    static_cast<EdgeID>(edges.size() - 1));
                 vertices[edge_to_set.target]
                 [edge_to_set.reverse_edge].reverse_edge = edges.size() - 1;
             } else {
@@ -705,12 +822,12 @@ class mutable_graph {
 
             for (EdgeID e : edges_of(n)) {
                 NodeID target = getEdgeTarget(n, e);
-                if (vertex_set.count(target) == 0) {
+                if (mem_stamp_[target] != mem_epoch_) {
                     RevEdge del_edge = vertices[n][e];
                     // neighbour of 'target' also in neighbourhood of 'node'
-                    if (map.count(target) > 0) {
+                    if (ctr_stamp_[target] == ctr_epoch_) {
                         // sum up edge weights
-                        auto[tgt, rev, ed2] = map[target];
+                        auto[tgt, rev, ed2] = ctr_edge_[target];
 
                         VIECUT_ASSERT_EQ(vertices[first][ed2].weight,
                                          vertices[tgt][rev].weight);
@@ -722,8 +839,9 @@ class mutable_graph {
 
                         if (vertices[tgt].size() - 1 == rev) {
                             // we need to move position of reverse edge in 'map'
-                            map[target] = std::make_tuple(
-                                tgt, del_edge.reverse_edge, ed2);
+                            ctr_edge_[target] = std::make_tuple(
+                                static_cast<EdgeWeight>(tgt),
+                                del_edge.reverse_edge, ed2);
                         }
 
                         internalDeleteEdge(del_edge.target,
@@ -741,11 +859,11 @@ class mutable_graph {
                         vertices[first].emplace_back(target, del_edge.weight,
                                                      del_edge.reverse_edge);
                         weighted_degree[first] += del_edge.weight;
-                        map.emplace(
-                            target,
-                            std::make_tuple(target,
-                                            del_edge.reverse_edge,
-                                            vertices[first].size() - 1));
+                        ctr_stamp_[target] = ctr_epoch_;
+                        ctr_edge_[target] = std::make_tuple(
+                            static_cast<EdgeWeight>(target),
+                            del_edge.reverse_edge,
+                            static_cast<EdgeID>(vertices[first].size() - 1));
                     }
                 } else {
                     --num_edges;
@@ -888,13 +1006,19 @@ class mutable_graph {
 
         for (NodeID n : nodes()) {
             serial[next++] = static_cast<uint64_t>(num_edges + n);
+#ifdef COMPACT_EDGES
+            for (const auto& [t, w, r] : vertices[n]) {
+#else
             for (const auto& [t, w, r, f, l] : vertices[n]) {
+#endif
                 // I am deeply sorry for this ugly code, but structured bindings
                 // seem to not work in combination with maybe_unused to suppress
                 // unintended unused warnings.
                 (void)r;
+#ifndef COMPACT_EDGES
                 (void)f;
                 (void)l;
+#endif
                 if (t > n) {
                     serial[next++] = static_cast<uint64_t>(t);
                     serial[next++] = static_cast<uint64_t>(w);
@@ -960,6 +1084,12 @@ class mutable_graph {
 
     std::vector<PartitionID> partition_index;
     std::vector<std::vector<RevEdge> > vertices;
+    // scratch for contractEdge's shared-neighbourhood lookup
+    std::vector<uint32_t> mem_stamp_;
+    uint32_t mem_epoch_ = 0;
+    std::vector<uint32_t> ctr_stamp_;
+    std::vector<std::tuple<EdgeWeight, EdgeID, EdgeID> > ctr_edge_;
+    uint32_t ctr_epoch_ = 0;
     std::vector<EdgeWeight> weighted_degree;
     std::vector<bool> node_in_cut;
     std::vector<NodeID> current_position;

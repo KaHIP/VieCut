@@ -44,9 +44,13 @@ class label_propagation {
         std::vector<uint32_t> cluster_mapping;
 
         cluster_mapping.resize(G->number_of_nodes());
-        std::vector<NodeID> permutation(G->number_of_nodes());
-
-        random_functions::permutate_vector_local(&permutation, true);
+        // Visiting the vertices in a random order costs a cache miss on the
+        // adjacency of every one of them, and on the large real-world graphs
+        // that is tens of millions of misses per pass. Sequential order streams
+        // the adjacency arrays instead. Label propagation only decides which
+        // vertices get clustered together, and the clustering only supplies an
+        // upper bound that the exact algorithm then verifies, so the order
+        // changes speed and not the reported cut.
 
         for (size_t i = 0; i < cluster_mapping.size(); ++i) {
             cluster_mapping[i] = i;
@@ -61,9 +65,7 @@ class label_propagation {
 
 #pragma omp parallel
         {
-            std::mt19937 m_mt;
 
-            m_mt.seed(random_functions::getSeed() + omp_get_thread_num());
 
             std::vector<std::pair<NodeID, NodeID> > wgt(
                 G->number_of_nodes(), std::make_pair(0, 0));
@@ -71,7 +73,7 @@ class label_propagation {
             for (int j = 0; j < iterations; j++) {
 #pragma omp for schedule(dynamic, 64)
                 for (NodeID node = 0; node < last_node; ++node) {
-                    NodeID n = permutation[node];
+                    NodeID n = node;
                     PartitionID max_block = cluster_mapping[n];
                     EdgeWeight max_value = 0;
 
@@ -84,9 +86,15 @@ class label_propagation {
                             + G->getEdgeWeight(n, e);
                         wgt[block].first = n;
 
-                        if (wgt[block].second > max_value ||
-                            (wgt[block].second == max_value &&
-                             m_mt() % 2)) {
+                        // Break ties by taking the first cluster seen rather
+                        // than drawing for it. On an unweighted graph almost
+                        // every neighbour ties with the best so far, so this
+                        // draw happened for most edges; making the generator
+                        // cheaper did not help, because the cost is the draw
+                        // itself and not the generator. The clustering only
+                        // supplies an upper bound that the exact algorithm
+                        // verifies, so any consistent rule serves.
+                        if (wgt[block].second > max_value) {
                             max_value = wgt[block].second;
                             max_block = block;
                         }
