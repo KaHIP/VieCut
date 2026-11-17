@@ -35,7 +35,7 @@ VieCut 2.00
 
 ## News
 
-**November 17, 2026** — We released VieCut 2.0. The exact minimum cut is substantially faster with no change to any computed cut: a geometric mean of 8.9x on one thread and 8.8x on 32 threads over a 53-instance benchmark, and the parallel exact path now solves large-cut instances that previously ran out of memory. The changes were produced with Agentic Algorithm Engineering; the public interface is unchanged. See the [one-page summary of what changed](docs/exact_speedups.pdf) and the [AAE paper](https://arxiv.org/abs/2609.07204).
+**November 17, 2026 — We released VieCut 2.0.** The exact minimum cut is substantially faster with no change to any computed cut: a geometric mean of 8.9x on one thread and 8.8x on 32 threads over a 53-instance benchmark, and the parallel exact path now solves large-cut instances that previously ran out of memory. The changes were produced with Agentic Algorithm Engineering; the public interface is unchanged. See the [one-page summary of what changed](docs/exact_speedups.pdf) and the [AAE paper](https://arxiv.org/abs/2609.07204).
 
 ## Quick Start
 
@@ -214,12 +214,11 @@ VieCut is free software provided under the MIT License.
 If you publish results using our algorithms, please cite the applicable papers:
 
 ```bibtex
-@article{BaderCGHNS26,
+@inproceedings{BaderCGHNS26,
   author    = {David A. Bader and Adil Chhabra and Ernestine Gro{\ss}mann and Monika Henzinger and Alexander Noe and Christian Schulz},
   title     = {Agentic Algorithm Engineering: Improving Shared-Memory Exact Minimum Cuts},
-  journal   = {CoRR},
-  volume    = {abs/2609.07204},
-  year      = {2026},
+  booktitle = {13th DIMACS Implementation Challenge},
+  year      = {2027},
   doi       = {10.48550/arXiv.2609.07204}
 }
 
