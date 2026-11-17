@@ -1,4 +1,4 @@
-VieCut 1.00
+VieCut 2.00
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![C++](https://img.shields.io/badge/C++-17-blue.svg)](https://isocpp.org/)
 [![CMake](https://img.shields.io/badge/CMake-3.9+-064F8C.svg)](https://cmake.org/)
